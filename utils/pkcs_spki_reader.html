@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PKCS#8 / Public Key Reader (HEX + node-forge, trim padding)</title>
+  <script src="https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js"></script>
+</head>
+<body>
+  <h2>PKCS#8 Private Key or SPKI Public Key Parser (HEX)</h2>
+  <textarea id="hexInput" rows="12" cols="80"></textarea><br><br>
+  <button onclick="parseHexKey()">Parse Key</button>
+  <pre id="output"></pre>
+
+  <script>
+    function hexToBytes(hex) {
+      hex = hex.replace(/\s+/g, '');
+      if (hex.length % 2 !== 0) throw new Error('Invalid HEX string');
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes.push(parseInt(hex.substr(i, 2), 16));
+      }
+      return String.fromCharCode.apply(null, bytes);
+    }
+
+    // Trim DER to only the first ASN.1 element
+    function trimDer(bytes) {
+      const buf = new Uint8Array(bytes.split('').map(c => c.charCodeAt(0)));
+      let offset = 0;
+
+      // Tag
+      const tag = buf[offset++];
+      if (offset >= buf.length) throw new Error('Truncated ASN.1');
+
+      // Length
+      let length = buf[offset++];
+      if (length & 0x80) { // long form
+        const numBytes = length & 0x7f;
+        if (offset + numBytes > buf.length) throw new Error('Invalid ASN.1 length');
+        length = 0;
+        for (let i = 0; i < numBytes; i++) {
+          length = (length << 8) | buf[offset++];
+        }
+      }
+
+      const totalLen = offset + length; // header + value
+      if (totalLen > buf.length) throw new Error('ASN.1 length beyond buffer');
+
+      // Slice only the valid part
+      return bytes.substring(0, totalLen);
+    }
+
+    function parseHexKey() {
+      const hex = document.getElementById('hexInput').value.trim();
+      const output = document.getElementById('output');
+      output.textContent = 'Parsing...';
+
+      try {
+        let derBytes = hexToBytes(hex);
+        derBytes = trimDer(derBytes); // remove any trailing junk
+
+        const asn1 = forge.asn1.fromDer(derBytes);
+        let keyObj, keyType;
+
+        try {
+          keyObj = forge.pki.privateKeyFromAsn1(asn1);
+          keyType = 'Private Key (PKCS#8)';
+        } catch (e1) {
+          try {
+            keyObj = forge.pki.publicKeyFromAsn1(asn1);
+            keyType = 'Public Key (SPKI)';
+          } catch (e2) {
+            throw new Error('Not a valid PKCS#8 private key or SPKI public key');
+          }
+        }
+
+        const info = { type: keyType };
+        if (keyType.startsWith('Private')) {
+          info.n = keyObj.n.toString(16);
+          info.e = keyObj.e.toString(16);
+          info.d = keyObj.d.toString(16);
+        } else {
+          info.n = keyObj.n.toString(16);
+          info.e = keyObj.e.toString(16);
+        }
+
+        output.textContent = '✅ Key parsed successfully:\n' +
+          JSON.stringify(info, null, 2);
+      } catch (err) {
+        output.textContent = '❌ Error: ' + err.message;
+      }
+    }
+  </script>
+</body>
+</html>

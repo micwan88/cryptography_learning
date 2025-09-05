@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RSA Key Pair Checker</title>
+  <script src="https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js"></script>
+  <style>
+    textarea, input { font-family: monospace; width: 90%; }
+    pre { background: #f4f4f4; padding: 8px; border-radius: 6px; overflow-x: auto; }
+    h3 { margin-top: 1.2em; }
+  </style>
+</head>
+<body>
+  <h2>RSA Key Pair Verification</h2>
+
+  <!-- PEM Form -->
+  <h3>Option 1: Paste Base64 (PEM Body Only)</h3>
+  <label>Public Key (Base64 body only):</label><br>
+  <textarea id="pub_pem_body" rows="8" placeholder="MIIBIjANBgkqhkiG9w0BAQEFA..."></textarea><br><br>
+
+  <label>Private Key (Base64 body only):</label><br>
+  <textarea id="priv_pem_body" rows="15" placeholder="MIIEvQIBADANBgkqhkiG9w0BA..."></textarea><br><br>
+
+  <button onclick="checkPemKeys()">Check PEM Keys</button>
+
+  <h3 id="pem_result"></h3>
+  <div id="pem_details"></div>
+
+  <hr>
+
+  <!-- Raw Hex Form -->
+  <h3>Option 2: Check using Raw Hex (n, e, d)</h3>
+  <label>Modulus (n, hex):</label><br>
+  <textarea id="n_hex" rows="3" placeholder="abcd1234..."></textarea><br><br>
+
+  <label>Public Exponent (e, hex):</label><br>
+  <input id="e_hex" placeholder="010001"><br><br>
+
+  <label>Private Exponent (d, hex):</label><br>
+  <textarea id="d_hex" rows="3" placeholder="abcd1234..."></textarea><br><br>
+
+  <button onclick="checkHexKeys()">Check Hex Keys</button>
+
+  <h3 id="hex_result"></h3>
+  <div id="hex_details"></div>
+
+<script>
+function toHexUpper(bi) {
+  return bi.toString(16).toUpperCase(); // 🔹 大寫 HEX
+}
+
+// Modular exponentiation (BigInt)
+function modPow(base, exp, mod) {
+  let result = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp % 2n === 1n) result = (result * base) % mod;
+    exp = exp / 2n;
+    base = (base * base) % mod;
+  }
+  return result;
+}
+
+// ---------- PEM Key Check ----------
+function checkPemKeys() {
+  document.getElementById("pem_details").innerHTML = "";
+  try {
+    const pubBody = document.getElementById("pub_pem_body").value.trim();
+    const privBody = document.getElementById("priv_pem_body").value.trim();
+
+    const pubPem = "-----BEGIN PUBLIC KEY-----\n" + pubBody + "\n-----END PUBLIC KEY-----";
+    const privPem = "-----BEGIN PRIVATE KEY-----\n" + privBody + "\n-----END PRIVATE KEY-----";
+
+    const pubKey = forge.pki.publicKeyFromPem(pubPem);
+    const privKey = forge.pki.privateKeyFromPem(privPem);
+
+    const n_pub = BigInt("0x" + pubKey.n.toString(16));
+    const e_pub = BigInt(pubKey.e.toString(10));
+    const n_priv = BigInt("0x" + privKey.n.toString(16));
+    const d_priv = BigInt("0x" + privKey.d.toString(16));
+
+    // Test encryption/decryption
+    const m = 123456789n;
+    const c = modPow(m, e_pub, n_pub);
+    const m2 = modPow(c, d_priv, n_priv);
+
+    document.getElementById("pem_result").innerText =
+      (m === m2 && n_pub === n_priv) ? "✅ Keys match (valid pair)" : "❌ Keys do not match";
+
+    let detailsHtml = "<h4>Extracted Values (Hex, Uppercase)</h4>";
+    detailsHtml += "<pre>Public Modulus (n_pub):\n" + toHexUpper(n_pub) + "</pre>";
+    detailsHtml += "<pre>Public Exponent (e_pub):\n" + toHexUpper(e_pub) + "</pre>";
+    detailsHtml += "<pre>Private Modulus (n_priv):\n" + toHexUpper(n_priv) + "</pre>";
+    detailsHtml += "<pre>Private Exponent (d_priv):\n" + toHexUpper(d_priv) + "</pre>";
+    document.getElementById("pem_details").innerHTML = detailsHtml;
+
+  } catch (err) {
+    document.getElementById("pem_result").innerText = "⚠️ Error: " + err.message;
+  }
+}
+
+// ---------- Hex Key Check ----------
+function checkHexKeys() {
+  document.getElementById("hex_details").innerHTML = "";
+  try {
+    const n = BigInt("0x" + document.getElementById("n_hex").value.trim());
+    const e = BigInt("0x" + document.getElementById("e_hex").value.trim());
+    const d = BigInt("0x" + document.getElementById("d_hex").value.trim());
+
+    const m = 123456789n;
+    const c = modPow(m, e, n);
+    const m2 = modPow(c, d, n);
+
+    document.getElementById("hex_result").innerText =
+      (m === m2) ? "✅ Keys match (valid pair)" : "❌ Keys do not match";
+
+    let detailsHtml = "<h4>Input Values (Hex, Uppercase)</h4>";
+    detailsHtml += "<pre>Modulus (n):\n" + toHexUpper(n) + "</pre>";
+    detailsHtml += "<pre>Public Exponent (e):\n" + toHexUpper(e) + "</pre>";
+    detailsHtml += "<pre>Private Exponent (d):\n" + toHexUpper(d) + "</pre>";
+    document.getElementById("hex_details").innerHTML = detailsHtml;
+
+  } catch (err) {
+    document.getElementById("hex_result").innerText = "⚠️ Error: " + err.message;
+  }
+}
+</script>
+</body>
+</html>
